@@ -21,17 +21,17 @@ class JwtService
         );
     }
 
-    public function createTokenResponse(User $user): JsonResponse
+    public function createToken(User $user): array
     {
-        $token = $this->createToken($user);
-        return response()->json([
+        $token = $this->generateToken($user);
+        return [
             'access_token' => $token,
             'token_type' => 'bearer',
             'expires_in' => 900 // 15 minutes in seconds
-        ]);
+        ];
     }
 
-    private function createToken(User $user): string
+    private function generateToken(User $user): string
     {
         $now = new DateTimeImmutable();
 

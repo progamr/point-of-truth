@@ -3,72 +3,117 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Services\JwtService;
+use App\Http\Requests\Auth\LoginRequest;
+use App\Http\Requests\Auth\RegisterRequest;
+use App\Services\AuthService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
 class AuthController extends Controller
 {
-    private JwtService $jwtService;
+    private AuthService $authService;
 
-    public function __construct(JwtService $jwtService)
+    public function __construct(AuthService $authService)
     {
-        $this->jwtService = $jwtService;
+        $this->authService = $authService;
     }
 
-    public function login(Request $request)
+    /**
+     * Register a new user
+     *
+     * @param RegisterRequest $request
+     * @return JsonResponse
+     */
+    public function register(RegisterRequest $request): JsonResponse
     {
-        $credentials = $request->validate([
-            'email' => 'required|email',
-            'password' => 'required',
-        ]);
+        $authData = $this->authService->register($request->validated());
+        return $this->sendAuthResponse($authData);
+    }
 
-        if (!Auth::attempt($credentials)) {
+    /**
+     * Login user
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function login(LoginRequest $request): JsonResponse
+    {
+        try {
+            $authData = $this->authService->login($request->validated());
+            return $this->sendAuthResponse($authData);
+        } catch (\Exception $e) {
             return response()->json([
-                'message' => 'Invalid credentials'
+                'message' => 'Invalid credentials',
             ], 401);
         }
-
-        $user = Auth::user();
-        return $this->jwtService->createTokenResponse($user);
     }
 
-    public function me(Request $request)
+    /**
+     * Get authenticated user
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function me(Request $request): JsonResponse
     {
         $token = str_replace('Bearer ', '', $request->header('Authorization'));
-        
-        if (empty($token) || !$this->jwtService->validateToken($token)) {
-            return response()->json(['message' => 'Unauthenticated'], 401);
-        }
+        $user = $this->authService->getAuthenticatedUser($token);
 
-        $user = $this->jwtService->getUserFromToken($token);
         if (!$user) {
-            return response()->json(['message' => 'User not found'], 404);
+            return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
         return response()->json($user);
     }
 
-    public function logout(Request $request)
+    /**
+     * Logout user
+     *
+     * @return JsonResponse
+     */
+    public function logout(): JsonResponse
     {
-        Auth::guard('api')->logout();
+        $this->authService->logout();
         return response()->json(['message' => 'Successfully logged out']);
     }
 
-    public function getCsrfToken()
+    /**
+     * Get CSRF token
+     *
+     * @return JsonResponse
+     */
+    public function getCsrfToken(): JsonResponse
     {
-        return response()->json([
+        return $this->sendAuthResponse([
             'token' => csrf_token()
-        ])->withCookie(
-            'XSRF-TOKEN',
-            csrf_token(),
-            60 * 24,
-            '/',
-            env('SESSION_DOMAIN'),
-            env('APP_ENV') === 'production',
-            true,
-            false,
-            'Lax'
-        );
+        ], true);
+    }
+
+    /**
+     * Send a standardized authentication response
+     *
+     * @param array $data
+     * @param bool $withCsrfCookie
+     * @return JsonResponse
+     */
+    private function sendAuthResponse(array $data, bool $withCsrfCookie = false): JsonResponse
+    {
+        $response = response()->json($data);
+
+        if ($withCsrfCookie) {
+            $response->withCookie(
+                'XSRF-TOKEN',
+                csrf_token(),
+                60 * 24,
+                '/',
+                env('SESSION_DOMAIN'),
+                env('APP_ENV') === 'production',
+                true,
+                false,
+                'Lax'
+            );
+        }
+
+        return $response;
     }
 }
